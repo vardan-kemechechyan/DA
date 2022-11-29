@@ -1,0 +1,10 @@
+diff a/Assets/Scripts/UI/UIManager.cs b/Assets/Scripts/UI/UIManager.cs	(rejected hunks)
+@@ -67,6 +67,8 @@
+         GameManager.OnChangeGameState += OnChangeGameState;
+ 
+         IsInitialized = true;
++
++        GetScreen<LevelFailedScreen>().OnClose += () => { CameraState = CameraState.Main; };
+     }
+ 
+     private void Update()

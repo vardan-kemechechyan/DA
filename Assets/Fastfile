@@ -1,0 +1,7 @@
+lane :upload_dsym do
+    upload_symbols_to_crashlytics(
+        {
+            gsp_path: "./GoogleService-Info.plist"
+          }
+    )
+end

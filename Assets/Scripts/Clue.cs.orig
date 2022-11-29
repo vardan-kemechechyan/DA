@@ -1,0 +1,37 @@
+﻿using System.Collections;
+using UnityEngine;
+
+public class Clue : MonoBehaviour
+{
+    [SerializeField] GameObject shine;
+    [SerializeField] ParticleSystem splash;
+    [SerializeField] GameObject tutorial;
+
+    public GameObject part;
+
+    bool enter;
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (!enter && other.CompareTag("Player")) 
+        {
+            enter = true;
+
+            Destroy(part);
+            shine.SetActive(false);
+            splash.Play();
+            ShowTutorial(false);
+
+<<<<<<< HEAD
+            GameManager.OnHitClue.Invoke(this);
+=======
+            GameManager.OnHitClue(this);
+>>>>>>> new_tutorial
+        }
+    }
+
+    public void ShowTutorial(bool show) 
+    {
+        tutorial.SetActive(show);
+    }
+}

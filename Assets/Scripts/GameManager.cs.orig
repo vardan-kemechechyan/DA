@@ -1,0 +1,743 @@
+﻿using System;
+using System.Linq;
+using System.Collections;
+using UnityEngine;
+using System.Collections.Generic;
+using Newtonsoft.Json;
+using UnityEngine.UI;
+
+public class GameManager : MonoBehaviour
+{
+    public float speed;
+
+    public static GameManager Instance { get; private set; }
+
+    public static Action<GameState, GameState> OnChangeGameState;
+    public static Action<Configuration.Location> OnChangeLocation;
+    public static Action<Configuration.Skin> OnChangeSkin;
+    public static Action<Trigger> OnHitTrigger;
+    public static Action<Clue> OnHitClue;
+    public static Action<Trigger> OnCamera;
+    public static Action<Key> OnHitKey;
+    public static Action<Gift> OnGift;
+    public static Action<SwipeDirection> OnSwipe;
+
+    [SerializeField] bool clearPrefsInEditor;
+
+    [SerializeField] Transform characterSkinRoot;
+
+    [SerializeField] Configuration config;
+    public Configuration Config { get => config; }
+
+    [SerializeField] SoundManager soundManager;
+    [SerializeField] UIManager ui;
+    [SerializeField] AddMoneyView addMoneyView;
+    [SerializeField] Image splash;
+    [SerializeField] AppReview appReview;
+
+    public float journey;
+    public float path;
+
+    bool skinUnlockedByProgress = false;
+
+    [SerializeField] GameState state;
+    public GameState State
+    {
+        get => state;
+        set
+        {
+            if (state != value)
+            {
+                if (value == GameState.Start)
+                {
+                    isSlowMotion = false;
+                    isTutorial = false;
+
+                    if (AdMob.IsInitialized) 
+                    {
+                        AdMob.Instance.RequestInterstitial();
+                        AdMob.Instance.RequestRewardedVideo();
+                    }
+                }
+                else if (value == GameState.Play) 
+                {
+                    var lvl = new Dictionary<string, object>();
+                    lvl.Add("level", TotalLevelsCompleted + 1);
+
+                    AnalyticEvents.ReportEvent("level_start", lvl);
+                }
+
+                OnChangeGameState?.Invoke(value, state);
+                state = value;
+            }
+        }
+    }
+
+    public Trigger.Type deathType;
+
+    public bool isSlowMotion;
+    public bool isTutorial;
+    public bool isPause;
+
+    int moreKeysCount;
+
+    public SwipeDirection tutorialMove;
+
+    public bool IsInitialized { get; private set; }
+
+    [SerializeField] int level = 0;
+    public int Level
+    {
+        get 
+        {
+            if (level >= Location.levels.Length)
+                level = Location.levels.Length - 1;
+
+            if (level < 0)
+                level = 0;
+
+            return level;
+        }
+        private set
+        {
+            if (value < 0)
+                value = 0;
+
+            if (value != level)
+            {
+                PlayerPrefs.SetInt("Level", value);
+                PlayerPrefs.Save();
+            }
+
+            level = value;
+        }
+    }
+
+    [SerializeField] int totalLevelsCompleted;
+    public int TotalLevelsCompleted
+    {
+        get
+        {
+            if (totalLevelsCompleted < 0)
+                totalLevelsCompleted = 0;
+
+            return totalLevelsCompleted;
+        }
+        private set
+        {
+            if (value < 0)
+                value = 0;
+
+            if (value != totalLevelsCompleted)
+            {
+                PlayerPrefs.SetInt("TotalLevels", value);
+                PlayerPrefs.Save();
+            }
+
+            totalLevelsCompleted = value;
+        }
+    }
+
+    public int giftLevelCount;
+
+    public bool IsGiftLevel { get; private set; }
+
+    [SerializeField] int bonusLevelCount;
+    public int BonusLevelCount 
+    {
+        get => bonusLevelCount;
+        set 
+        {
+            bonusLevelCount = value;
+        }
+    }
+
+    [SerializeField] int bonusKeys;
+    public int BonusKeys 
+    {
+        get => bonusKeys;
+        set 
+        {
+            if (value < 0)
+                value = 0;
+
+            PlayerPrefs.SetInt("BonusKeys", value);
+            PlayerPrefs.Save();
+
+            bonusKeys = value;
+        }
+    }
+
+    public int CollectedKeys { get; set; }
+
+    public bool ObstacleHasTutorial { get; set; }
+
+    [SerializeField] int remainingKeys;
+    public int RemainingKeys 
+    {
+        get => remainingKeys;
+        private set 
+        {
+            if (ui.GetScreen<BonusCaseScreen>().IsOpen)
+                ui.GetScreen<BonusCaseScreen>().UpdateKeysCount(value);
+
+            remainingKeys = value;
+        }
+    }
+
+    public bool IsLastLevel() 
+    {
+        return Location.levels[Level].Equals(Location.levels.Last());
+    }
+
+    public bool IsInitialLevel()
+    {
+        if (Location.Equals(config.locations[0]) && Level == 0)
+            return true;
+        else
+            return false;
+    }
+
+    [SerializeField] int money;
+    public int Money
+    {
+        get => money;
+        set
+        {
+            if (value <= 0)
+                value = 0;
+
+            if (value != money)
+            {
+                PlayerPrefs.SetInt("Money", value);
+                PlayerPrefs.Save();
+            }
+
+            if (updateMoneyView && money < value)
+                addMoneyView.AddMoney(value - money);
+
+            updateMoneyView = true;
+
+            money = value;
+
+            ui.GetScreen<LevelCompleteScreen>().UpdateMoneyCounter();
+        }
+    }
+
+    public bool updateMoneyView;
+
+    [SerializeField] List<string> skins;
+    public List<string> Skins
+    {
+        get => skins;
+        set
+        {
+            PlayerPrefs.SetString("Skins", JsonConvert.SerializeObject(value));
+            PlayerPrefs.Save();
+
+            skins = value;
+        }
+    }
+
+    [SerializeField]
+    public Configuration.Skin skin;
+    public Configuration.Skin Skin 
+    {
+        get => skin;
+        set 
+        {
+            PreviousSkin = skin;
+
+            if (config.skins.Contains(value)) 
+            {
+                PlayerPrefs.SetString("Skin", value.id);
+                PlayerPrefs.Save();
+            }
+
+            OnChangeSkin?.Invoke(value);
+
+            skin = value;
+        }
+    }
+
+    public Configuration.Skin PreviousSkin { get; private set; }
+
+    public Configuration.Skin CurrentUnlockedSkin { get; private set; }
+
+    [SerializeField]
+    Configuration.Location location;    
+    public Configuration.Location Location 
+    {
+        get => location;
+        private set
+        {
+            if (value != location) 
+            {
+                PlayerPrefs.SetString("Location", value.id);
+                PlayerPrefs.Save();
+
+                location = value;
+
+                OnChangeLocation?.Invoke(value);
+            }
+        }
+    }
+
+    public Configuration.Location GetLocation(string id)
+    {
+        var value = config.locations.FirstOrDefault(x => x.id == id);
+
+        if (value != null) return value;
+        else
+        {
+            Debug.LogWarning($"Location {id} not found!");
+            return config.locations[0];
+        }
+    }
+
+    public Configuration.Location GetNextLocation()
+    {
+        var i = Array.IndexOf(config.locations, location) + 1;
+        i = i < config.locations.Length ? i : config.locations.Length - 1;
+        return config.locations[i < config.locations.Length ? i : config.locations.Length - 1];
+    }
+
+    public Configuration.Skin GetSkin(string id)
+    {
+        var value = config.skins.FirstOrDefault(x => x.id == id);
+
+        if (value != null) return value;
+        else 
+        {
+            Debug.LogWarning($"Skin {id} not found!");
+            return config.skins[0];
+        }
+    }
+
+    public bool IsGetLocationBonus { get; private set; }
+
+    public GameObject GetLetter(string key) 
+    {
+        return Resources.Load($"Alphabet\\{key}") as GameObject;
+    }
+
+    public Configuration.Level GetCurrentLevel() 
+    {
+        return IsGiftLevel ? config.giftLevel : Location.levels[Level];
+    }
+
+    public Configuration.Skin[] GetAvailableSkins() 
+    {
+        return config.skins.Where(x => !HasSkin(x.id)).ToArray();
+    }
+
+    public bool HasSkin(string id) 
+    {
+        foreach (var s in Skins) 
+        {
+            if (s.Equals(id)) return true;
+        }
+
+        return false;
+    }
+
+    public int GetLevelObstaclesCount() 
+    {
+        var level = IsGiftLevel ? config.giftLevel : Location.levels[Level];
+        return level.obstacles.Length;
+    }
+
+    public float GetLevelSpeed() 
+    {
+        return config.gameSpeed * config.gameSpeedByLevel.Evaluate(TotalLevelsCompleted);
+    }
+
+    public bool SkipAd() 
+    {
+        return TotalLevelsCompleted < 1;
+    }
+
+    private void Awake()
+    {
+        Instance = this;
+    }
+
+    public void Initialize()
+    {
+#if UNITY_EDITOR
+        if (clearPrefsInEditor)
+            PlayerPrefs.DeleteAll();
+#endif
+
+        IsGetLocationBonus = Convert.ToBoolean(PlayerPrefs.GetInt("LocationBonus"));
+
+        if (PlayerPrefs.HasKey("Level") && !PlayerPrefs.HasKey("TotalLevels"))
+            PlayerPrefs.DeleteAll();
+
+        Level = PlayerPrefs.GetInt("Level");
+        TotalLevelsCompleted = PlayerPrefs.GetInt("TotalLevels");
+        Money = PlayerPrefs.GetInt("Money");
+        BonusKeys = PlayerPrefs.GetInt("BonusKeys");
+
+        if (PlayerPrefs.HasKey("Skins"))
+        {
+            skins = JsonConvert.DeserializeObject<List<string>>(PlayerPrefs.GetString("Skins"));
+        }
+        else
+        {
+            var s = new List<string>();
+            s.Add(config.skins[0].id);
+            Skins = s;
+        }
+
+        var skin = GetSkin(PlayerPrefs.GetString("Skin"));
+
+        if (skin != null) Skin = skin;
+        else Skin = config.skins[0];
+
+        if (PlayerPrefs.HasKey("Location"))
+            Location = GetLocation(PlayerPrefs.GetString("Location"));
+        else Location = config.locations[0];
+
+        if (string.IsNullOrEmpty(PlayerPrefs.GetString("BestCase"))) 
+        {
+            PlayerPrefs.SetString("BestCase", "Skin");
+            PlayerPrefs.SetInt("BestCaseType", 1);
+            PlayerPrefs.SetInt("BestCaseValue", 0);
+            PlayerPrefs.SetString("BestCaseItem", config.skins[0].id);
+        }
+
+        IsInitialized = true;
+    }
+
+    void Update()
+    {
+#if UNITY_EDITOR
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            Test();
+        }
+#endif
+    }
+
+    public void Test() 
+    {
+        PlayerPrefs.SetInt("tutorial", 1);
+        PlayerPrefs.Save();
+
+        State = GameState.LevelComplete;
+
+        //if(!IsInitialLevel())
+        //    OpenBonusGame();
+    }
+
+    public void Restart() 
+    {
+        StopCoroutine("RestartCoroutine");
+        StartCoroutine("RestartCoroutine");
+
+        ReportHomeOrRestart();
+    }
+
+    public void LeaveGame() 
+    {
+        var skin = GetSkin(PlayerPrefs.GetString("Skin"));
+
+        if (Skin != skin)
+            Skin = skin;
+
+        State = GameState.Start;
+
+        ReportHomeOrRestart();
+    }
+
+    private void ReportHomeOrRestart() 
+    {
+        var parameters = new Dictionary<string, object>();
+
+        parameters.Add("location", Location.id);
+        parameters.Add("level", Level + 1);
+
+        AnalyticEvents.ReportEvent("level_restart", parameters);
+    }
+
+    public bool IsRestarting { get; private set; }
+
+    IEnumerator RestartCoroutine() 
+    {
+        IsRestarting = true;
+
+        var skin = GetSkin(PlayerPrefs.GetString("Skin"));
+
+        if (Skin != skin)
+            Skin = skin;
+
+        State = GameState.Start;
+
+        IsRestarting = false;
+
+        yield return new WaitForSeconds(0.1f);
+
+        State = GameState.Play;
+
+        PlayLocationMusic(true);
+    }
+
+    public void SetTutorial(int tutorial) 
+    {
+        Extensions.Clone(Config.tutorials[tutorial], Config.locations[0].levels[0]);
+    }
+
+    public void SetGameState(string state) 
+    {
+        if (Enum.TryParse(state, out GameState s)) State = s;
+        else Debug.LogWarning($"State {state} not exist!");
+    }
+
+    public void GameOver(Trigger.Type type)
+    {
+        deathType = type;
+
+        if (State == GameState.Play)
+            State = GameState.LevelFailed;
+    }
+
+    public void NextLevel(bool mandatoryOpenSkinScreen = false)
+    {
+        BonusKeys += CollectedKeys;
+        appReview.RepeatCounter++;
+
+        var level = Level;
+
+        if (!IsGiftLevel)
+        {
+            giftLevelCount++;
+
+            if (giftLevelCount >= config.giftLevelRate)
+            {
+                giftLevelCount = 0;
+
+                IsGiftLevel = true;
+            }
+
+            TotalLevelsCompleted++;
+            level++;
+        }
+        else
+        {
+            IsGiftLevel = false;
+        }
+
+        if (level >= Location.levels.Length)
+        {
+            if (Location != config.locations.Last())
+            {
+                ui.ShowScreen<NextLocationScreen>();
+            }
+            else
+            {
+                Debug.LogWarning("Reached last location and last level!");
+                Location = config.locations[1];
+
+                Level = 0;
+                State = GameState.Start;
+            }
+        }
+        else
+        {
+            Level = level;
+            State = GameState.Start;
+        }
+
+        if (BonusKeys >= config.locationKeysCount && !IsGetLocationBonus)
+        {
+            IsGetLocationBonus = true;
+
+            PlayerPrefs.SetInt("LocationBonus", Convert.ToInt16(IsGetLocationBonus));
+            PlayerPrefs.Save();
+
+            OpenBonusGame();
+        }
+        else if (mandatoryOpenSkinScreen) CloseSkinUnlockedScreen();
+    }
+
+    public void NextLocation() 
+    {
+        IsGetLocationBonus = false;
+
+        Location = config.locations[Array.IndexOf(config.locations, Location) + 1];
+        Level = 0;
+
+        State = GameState.Start;
+    }
+
+    public void PlayMenuMusic(bool play) 
+    {
+        if (play) soundManager.PlayMusic(config.menuMusic);
+        else soundManager.StopMusic();
+    }
+
+    public void PlayLocationMusic(bool play)
+    {
+        if (play) soundManager.PlayMusic(Location.music);
+        else soundManager.StopMusic();
+    }
+
+    public void ToggleSound() 
+    {
+        soundManager.ToggleSound();
+    }
+
+    public void GetBonusKeys() 
+    {
+        RemainingKeys = config.locationKeysCount;
+    }
+
+    public void OpenBonusGame() 
+    {
+        if(!skinUnlockedByProgress)
+            CurrentUnlockedSkin = null;
+
+        BonusKeys = 0;
+        GetBonusKeys();
+
+        ui.ShowScreen<BonusGameScreen>();
+    }
+
+    public void OpenBonusCases()
+    {
+        ui.ShowScreen<BonusCaseScreen>();
+    }
+
+    public void CloseBonusGame()
+    {
+        BonusKeys = 0;
+        moreKeysCount = 0;
+        State = GameState.Start;
+
+        skinUnlockedByProgress = false;
+
+        ui.ShowScreen<SkinsScreen>();
+    }
+
+    public void SkinUnlockedScreen()
+    {
+        ui.ShowScreen<SkinUnlockedScreen>();
+	}
+
+    public void CloseSkinUnlockedScreen()
+    {
+        State = GameState.Start;
+
+        skinUnlockedByProgress = false;
+
+        ui.ShowScreen<SkinsScreen>();
+    }
+
+    public void SkipBonusGame()
+    {
+        moreKeysCount = 0;
+        State = GameState.Start;
+
+        ui.ShowScreen<StartScreen>();
+    }
+
+    public Configuration.BonusCase[] GetBonusCases(int capacity) 
+    {
+        Configuration.BonusCase[] value = new Configuration.BonusCase[capacity];
+        
+        var moneyCases = config.bonusCases.Where(x => x.type == Configuration.BonusCase.Type.Money).ToArray();
+        
+        for (int i = 0; i < value.Length; i++) 
+        {
+            value[i] = moneyCases[UnityEngine.Random.Range(0, moneyCases.Length)];
+        }
+        
+        var availableSkins = (Configuration.Skin[])config.skins.Clone();
+        
+        for (int i = 0; i < availableSkins.Length; i++) 
+        {
+            if (HasSkin(availableSkins[i].id))
+                availableSkins[i] = null;
+        }
+        
+        availableSkins = availableSkins.Where(x => x != null).ToArray();
+        
+        if (availableSkins.Length > 0)
+        {
+            availableSkins.Shuffle();
+
+            var bonusSkin = new Configuration.BonusCase();
+            bonusSkin.type = Configuration.BonusCase.Type.Skin;
+            bonusSkin.skin = availableSkins[0];
+
+            value[UnityEngine.Random.Range(0, value.Length)] = bonusSkin;
+        }
+
+        return value;
+    }
+
+    public void GetBonusCase(Configuration.BonusCase bonus) 
+    {
+        RemainingKeys--;
+
+        switch (bonus.type)
+        {
+            case Configuration.BonusCase.Type.Money:
+                StopCoroutine("UpdateBonusCaseMoneyCoroutine");
+                StartCoroutine("UpdateBonusCaseMoneyCoroutine", bonus.money);
+                break;
+            case Configuration.BonusCase.Type.Skin:
+                var item = bonus.skin;
+
+                var sk = Skins;
+                sk.Add(item.id);
+                Skins = sk;
+
+                CurrentUnlockedSkin = GetSkin(item.id);
+
+                bonus.money = item.cost;
+                break;
+        }
+
+        if (RemainingKeys <= 0)
+            Invoke("OpenMoreKeys", 2.0f);
+    }
+
+    public void UnlockAndSelectTheSkin(Configuration.Skin unclockedSkin)
+    {
+        skinUnlockedByProgress = true;
+
+        CurrentUnlockedSkin = null;
+
+        var sk = Skins;
+        sk.Add(unclockedSkin.id);
+        Skins = sk;
+
+        CurrentUnlockedSkin = GetSkin(unclockedSkin.id);
+    }
+
+    WaitForSeconds updateBonusCaseMoneyDelay = new WaitForSeconds(1.0f);
+
+    IEnumerator UpdateBonusCaseMoneyCoroutine(int money) 
+    {
+        yield return updateBonusCaseMoneyDelay;
+        Money += money;
+        yield return updateBonusCaseMoneyDelay;
+        ui.GetScreen<BonusCaseScreen>().UpdateMoneyCounter();
+    }
+
+    private void OpenMoreKeys() 
+    {
+        if (moreKeysCount < config.moreKeysCount && AdMob.Instance.IsRewardedReady())
+        {
+            moreKeysCount++;
+
+            ui.GetScreen<BonusCaseScreen>().ShowGetMoreKeys();
+        }
+        else 
+        {
+            ui.GetScreen<BonusCaseScreen>().Continue();
+        }
+    }
+}

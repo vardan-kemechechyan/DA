@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "940432424307",
+    "project_id": "dodge-agent-and-hop-master",
+    "storage_bucket": "dodge-agent-and-hop-master.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:940432424307:android:a6a5ad73c562ee4f191906",
+        "android_client_info": {
+          "package_name": "com.weave.dodgeagent"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "940432424307-diimhc4vi926e1mu47jf474hbp872hkl.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPMAPtoNL8_xZnpu1wFXqoqqQ2X_jByPM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "940432424307-diimhc4vi926e1mu47jf474hbp872hkl.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "940432424307-rjfqn9svlnmvrav2klj5jthfpojfr4v6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.weave.dodgeagent"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

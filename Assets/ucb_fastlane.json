@@ -1,0 +1,7 @@
+{
+    "fastfile": "Assets/Fastfile",
+    "lanes": {
+        "pre_build": "",
+        "post_build": "upload_dsym"
+    }
+}
